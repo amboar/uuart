@@ -213,7 +213,7 @@ int main(int argc, char * const argv[])
 	stall = false;
 	iters = atoi(argv[optind]);
 	fprintf(stderr, "Running for %d iterations\n", iters);
-	for (int i = 0; i < iters; i++) {
+	for (int i = 0; iters < 0 || i < iters; i += (iters > 0)) {
 		lsr = readb(regs, R_LSR);
 
 		if ((lsr & LSR_DR) || (lsr & LSR_THRE)) {
