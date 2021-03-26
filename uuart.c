@@ -24,6 +24,10 @@
 #define R_THR			0x00
 #define R_DLL			0x00
 #define R_IER			0x04
+#define   IER_ERBFI		BIT(0)
+#define   IER_ETBEI		BIT(1)
+#define   IER_ELSI		BIT(2)
+#define   IER_EDSSI		BIT(3)
 #define R_DLM			0x04
 #define R_IIR			0x08
 #define R_FCR			0x08
@@ -94,12 +98,77 @@ static void dump_regs(const volatile void *regs)
 	fprintf(stderr, "\tGCRH:\t0x%02x\n", readb(regs, R_GCRH));
 }
 
-int main(int argc, const char *argv[])
+struct uuart_config {
+	bool assume_dtr;
+	bool assume_enabled;
+	bool assume_fifos;
+	bool ignore_rx;
+	bool ignore_tx;
+};
+
+static const char help_text[] =
+"%s: Userspace UART driver\n"
+"\n"
+"-D, --assume-dtr\n"
+"\tAssume MCR[DTR] and MCR[RTS] are set appropriately\n"
+"\n"
+"-E, --assume-enabled\n"
+"\tAssume the UART is enabled and configured to not drain the Rx FIFO\n"
+"\n"
+"-F, --assume-fifos\n"
+"\tAssume the FIFOs are configured and do not need resetting\n"
+"\n"
+"-h, --help\n"
+"\tHelp!\n"
+"\n"
+"-R, --ignore-rx\n"
+"\tIgnore LSR[DR] and do not read RBR\n"
+"\n"
+"-T, --ignore-tx\n"
+"\tIgnore LSR[THRE] and do not write THR\n";
+
+int main(int argc, char * const argv[])
 {
+	unsigned long txd = 0, rxd = 0;
+	struct uuart_config cfg = {0};
 	volatile void *regs;
-	uint8_t lsr;
+	uint8_t lsr, ier;
 	bool stall;
+	int iters;
 	int fd;
+	int o;
+
+	while (1) {
+		static struct option long_options [] = {
+			{ "assume-dtr",     no_argument, NULL, 'D' },
+			{ "assume-enabled", no_argument, NULL, 'E' },
+			{ "assume-fifos",   no_argument, NULL, 'F' },
+			{ "help",           no_argument, NULL, 'h' },
+			{ "ignore-rx",      no_argument, NULL, 'R' },
+			{ "ignore-tx",      no_argument, NULL, 'T' },
+			{ NULL,             0,           NULL,  0  },
+		};
+		int oi = 0;
+
+		o = getopt_long(argc, argv, "DEFhRT", long_options, &oi);
+		if (o == -1)
+			break;
+
+		if (o == 'D')
+			cfg.assume_dtr = true;
+		else if (o == 'E')
+			cfg.assume_enabled = true;
+		else if (o == 'F')
+			cfg.assume_fifos = true;
+		else if (o == 'h')
+			errx(EXIT_SUCCESS, help_text, argv[0]);
+		else if (o == 'R')
+			cfg.ignore_rx = true;
+		else if (o == 'T')
+			cfg.ignore_tx = true;
+		else
+			errx(EXIT_FAILURE, "Unexpected option: %c", o);
+	}
 
 	fd = open("/dev/mem", O_SYNC | O_RDWR);
 	if (fd == -1)
@@ -112,26 +181,39 @@ int main(int argc, const char *argv[])
 	fprintf(stderr, "Startup configuration\n");
 	dump_regs(regs);
 
-	if (argc < 2)
+	assert(optind <= argc);
+	if (optind == argc)
 		exit(EXIT_SUCCESS);
 
 	/* Enable the VUART */
-	writeb(regs, R_GCRA, GCRA_VUART_EN | GCRA_H_TX_CORK);
+	if (!cfg.assume_enabled)
+		writeb(regs, R_GCRA, GCRA_VUART_EN | GCRA_H_TX_CORK);
 
-	/* Clear IER */
-	writeb(regs, R_IER, 0);
+	/* Configure IER */
+	ier = readb(regs, R_IER);
+	if (!cfg.ignore_tx)
+		ier &= ~IER_ETBEI;
+	if (!cfg.ignore_rx)
+		ier &= ~IER_ERBFI;
+	if (!(ier & (IER_ETBEI | IER_ERBFI)))
+		ier = 0;
+	writeb(regs, R_IER, ier);
 
 	/* Reset and enable the FIFOs */
-	writeb(regs, R_FCR, 0x07);
+	if (!cfg.assume_fifos)
+		writeb(regs, R_FCR, 0x07);
 
 	/* Indicate we're ready */
-	writeb(regs, R_MCR, 0x0b);
+	if (!cfg.assume_dtr)
+		writeb(regs, R_MCR, 0x0b);
 
 	fprintf(stderr, "Initialised configuration\n");
 	dump_regs(regs);
 
 	stall = false;
-	for (int i = 0, iters = atoi(argv[1]); i < iters; i++) {
+	iters = atoi(argv[optind]);
+	fprintf(stderr, "Running for %d iterations\n", iters);
+	for (int i = 0; i < iters; i++) {
 		lsr = readb(regs, R_LSR);
 
 		if ((lsr & LSR_DR) || (lsr & LSR_THRE)) {
@@ -164,15 +246,25 @@ int main(int argc, const char *argv[])
 			stall = true;
 		}
 
-		if (lsr & LSR_DR)
-			putchar(readb(regs, R_RBR));
-
-		if (lsr & LSR_THRE)
+		if (!cfg.ignore_tx && (lsr & LSR_THRE)) {
 			writeb(regs, R_THR, 'y');
+			txd++;
+		}
+
+		if (!cfg.ignore_rx && (lsr & LSR_DR)) {
+			putchar(readb(regs, R_RBR));
+			rxd++;
+		}
 	}
 
 	fprintf(stderr, "Terminating configuration\n");
 	dump_regs(regs);
+
+	if (!cfg.ignore_tx)
+		fprintf(stderr, "Transmitted:\t%lu\n", txd);
+
+	if (!cfg.ignore_rx)
+		fprintf(stderr, "Received:\t%lu\n", rxd);
 
 	exit(EXIT_SUCCESS);
 }
