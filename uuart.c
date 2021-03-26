@@ -80,22 +80,22 @@ static void writeb(volatile void *regs, unsigned long offset, uint8_t val)
 	mb();
 }
 
-static void dump_regs(const volatile void *regs)
+static void dump_regs(const volatile void *regs, unsigned long dev)
 {
-	fprintf(stderr, "\tIER:\t0x%02x\n", readb(regs, R_IER));
-	fprintf(stderr, "\tIIR:\t0x%02x\n", readb(regs, R_IIR));
-	fprintf(stderr, "\tLCR:\t0x%02x\n", readb(regs, R_LCR));
-	fprintf(stderr, "\tMCR:\t0x%02x\n", readb(regs, R_MCR));
-	fprintf(stderr, "\tLSR:\t0x%02x\n", readb(regs, R_LSR));
-	fprintf(stderr, "\tMSR:\t0x%02x\n", readb(regs, R_MSR));
-	fprintf(stderr, "\tGCRA:\t0x%02x\n", readb(regs, R_GCRA));
-	fprintf(stderr, "\tGCRB:\t0x%02x\n", readb(regs, R_GCRB));
-	fprintf(stderr, "\tVARL:\t0x%02x\n", readb(regs, R_VARL));
-	fprintf(stderr, "\tVARH:\t0x%02x\n", readb(regs, R_VARH));
-	fprintf(stderr, "\tGCRE:\t0x%02x\n", readb(regs, R_GCRE));
-	fprintf(stderr, "\tGCRF:\t0x%02x\n", readb(regs, R_GCRF));
-	fprintf(stderr, "\tGCRG:\t0x%02x\n", readb(regs, R_GCRG));
-	fprintf(stderr, "\tGCRH:\t0x%02x\n", readb(regs, R_GCRH));
+	fprintf(stderr, "\t0x%08lx\tIER:\t0x%02x\n", dev + R_IER, readb(regs, R_IER));
+	fprintf(stderr, "\t0x%08lx\tIIR:\t0x%02x\n", dev + R_IIR, readb(regs, R_IIR));
+	fprintf(stderr, "\t0x%08lx\tLCR:\t0x%02x\n", dev + R_LCR, readb(regs, R_LCR));
+	fprintf(stderr, "\t0x%08lx\tMCR:\t0x%02x\n", dev + R_MCR, readb(regs, R_MCR));
+	fprintf(stderr, "\t0x%08lx\tLSR:\t0x%02x\n", dev + R_LSR, readb(regs, R_LSR));
+	fprintf(stderr, "\t0x%08lx\tMSR:\t0x%02x\n", dev + R_MSR, readb(regs, R_MSR));
+	fprintf(stderr, "\t0x%08lx\tGCRA:\t0x%02x\n", dev + R_GCRA, readb(regs, R_GCRA));
+	fprintf(stderr, "\t0x%08lx\tGCRB:\t0x%02x\n", dev + R_GCRB, readb(regs, R_GCRB));
+	fprintf(stderr, "\t0x%08lx\tVARL:\t0x%02x\n", dev + R_VARL, readb(regs, R_VARL));
+	fprintf(stderr, "\t0x%08lx\tVARH:\t0x%02x\n", dev + R_VARH, readb(regs, R_VARH));
+	fprintf(stderr, "\t0x%08lx\tGCRE:\t0x%02x\n", dev + R_GCRE, readb(regs, R_GCRE));
+	fprintf(stderr, "\t0x%08lx\tGCRF:\t0x%02x\n", dev + R_GCRF, readb(regs, R_GCRF));
+	fprintf(stderr, "\t0x%08lx\tGCRG:\t0x%02x\n", dev + R_GCRG, readb(regs, R_GCRG));
+	fprintf(stderr, "\t0x%08lx\tGCRH:\t0x%02x\n", dev + R_GCRH, readb(regs, R_GCRH));
 }
 
 struct uuart_config {
@@ -179,7 +179,7 @@ int main(int argc, char * const argv[])
 		err(EXIT_FAILURE, "mmap");
 
 	fprintf(stderr, "Startup configuration\n");
-	dump_regs(regs);
+	dump_regs(regs, D_VUART2);
 
 	assert(optind <= argc);
 	if (optind == argc)
@@ -258,7 +258,7 @@ int main(int argc, char * const argv[])
 	}
 
 	fprintf(stderr, "Terminating configuration\n");
-	dump_regs(regs);
+	dump_regs(regs, D_VUART2);
 
 	if (!cfg.ignore_tx)
 		fprintf(stderr, "Transmitted:\t%lu\n", txd);
