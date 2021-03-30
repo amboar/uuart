@@ -102,8 +102,8 @@ struct uuart_config {
 	bool assume_dtr;
 	bool assume_enabled;
 	bool assume_fifos;
-	bool ignore_rx;
-	bool ignore_tx;
+	bool no_rx;
+	bool no_tx;
 };
 
 static const char help_text[] =
@@ -144,8 +144,8 @@ int main(int argc, char * const argv[])
 			{ "assume-enabled", no_argument, NULL, 'E' },
 			{ "assume-fifos",   no_argument, NULL, 'F' },
 			{ "help",           no_argument, NULL, 'h' },
-			{ "ignore-rx",      no_argument, NULL, 'R' },
-			{ "ignore-tx",      no_argument, NULL, 'T' },
+			{ "no-rx",          no_argument, NULL, 'R' },
+			{ "no-tx",          no_argument, NULL, 'T' },
 			{ NULL,             0,           NULL,  0  },
 		};
 		int oi = 0;
@@ -163,9 +163,9 @@ int main(int argc, char * const argv[])
 		else if (o == 'h')
 			errx(EXIT_SUCCESS, help_text, argv[0]);
 		else if (o == 'R')
-			cfg.ignore_rx = true;
+			cfg.no_rx = true;
 		else if (o == 'T')
-			cfg.ignore_tx = true;
+			cfg.no_tx = true;
 		else
 			errx(EXIT_FAILURE, "Unexpected option: %c", o);
 	}
@@ -191,9 +191,9 @@ int main(int argc, char * const argv[])
 
 	/* Configure IER */
 	ier = readb(regs, R_IER);
-	if (!cfg.ignore_tx)
+	if (!cfg.no_tx)
 		ier &= ~IER_ETBEI;
-	if (!cfg.ignore_rx)
+	if (!cfg.no_rx)
 		ier &= ~IER_ERBFI;
 	if (!(ier & (IER_ETBEI | IER_ERBFI)))
 		ier = 0;
@@ -208,12 +208,15 @@ int main(int argc, char * const argv[])
 		writeb(regs, R_MCR, 0x0b);
 
 	fprintf(stderr, "Initialised configuration\n");
-	dump_regs(regs);
+	dump_regs(regs, D_VUART2);
 
 	stall = false;
 	iters = atoi(argv[optind]);
 	fprintf(stderr, "Running for %d iterations\n", iters);
 	for (int i = 0; iters < 0 || i < iters; i += (iters > 0)) {
+		if (!cfg.no_rx)
+			writeb(regs, R_IER, (~IER_ERBFI & readb(regs, R_IER)));
+
 		lsr = readb(regs, R_LSR);
 
 		if ((lsr & LSR_DR) || (lsr & LSR_THRE)) {
@@ -246,13 +249,14 @@ int main(int argc, char * const argv[])
 			stall = true;
 		}
 
-		if (!cfg.ignore_tx && (lsr & LSR_THRE)) {
+		if (!cfg.no_tx && (lsr & LSR_THRE)) {
 			writeb(regs, R_THR, 'y');
 			txd++;
 		}
 
-		if (!cfg.ignore_rx && (lsr & LSR_DR)) {
+		if (!cfg.no_rx && (lsr & LSR_DR)) {
 			putchar(readb(regs, R_RBR));
+			fflush(stdout);
 			rxd++;
 		}
 	}
@@ -260,10 +264,10 @@ int main(int argc, char * const argv[])
 	fprintf(stderr, "Terminating configuration\n");
 	dump_regs(regs, D_VUART2);
 
-	if (!cfg.ignore_tx)
+	if (!cfg.no_tx)
 		fprintf(stderr, "Transmitted:\t%lu\n", txd);
 
-	if (!cfg.ignore_rx)
+	if (!cfg.no_rx)
 		fprintf(stderr, "Received:\t%lu\n", rxd);
 
 	exit(EXIT_SUCCESS);
